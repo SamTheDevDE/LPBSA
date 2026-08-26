@@ -38,7 +38,7 @@ val generatedBuildInfo = layout.buildDirectory.dir("generated/sources/build-info
 
 val buildVersion = project.version.toString()
 val generateBuildInfo = tasks.register<Copy>("generateBuildInfo") {
-    from("src/build/templates") {
+    from("src/templates/build-info") {
         expand("version" to buildVersion)
         rename { it.removeSuffix(".template") }
     }
