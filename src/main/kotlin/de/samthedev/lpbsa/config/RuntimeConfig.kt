@@ -1,5 +1,7 @@
 package de.samthedev.lpbsa.config
 
+import java.util.Locale
+
 const val SUPPORTED_CONFIG_VERSION = 1
 
 enum class DefaultPolicy { OPEN, RESTRICTED }
@@ -86,11 +88,12 @@ data class RuntimeConfig(
     val unknownServers: Set<String>,
 ) {
     fun restrictionFor(server: String): ResolvedRestriction? {
-        val configured = servers[server]
+        val canonicalServer = canonicalServerName(server)
+        val configured = servers[canonicalServer]
         if (configured != null) {
             if (!configured.enabled) return null
             return ResolvedRestriction(
-                server = server,
+                server = canonicalServer,
                 requirements = configured.requirements,
                 bypassPermission = configured.bypassPermission,
                 denial = denial.merge(configured.denial),
@@ -100,9 +103,9 @@ data class RuntimeConfig(
         }
         if (defaultPolicy == DefaultPolicy.OPEN) return null
         return ResolvedRestriction(
-            server = server,
-            requirements = Requirements(RequirementMode.ANY, listOf("lpbsa.server.$server"), emptyList()),
-            bypassPermission = "lpbsa.bypass.$server",
+            server = canonicalServer,
+            requirements = Requirements(RequirementMode.ANY, listOf("lpbsa.server.$canonicalServer"), emptyList()),
+            bypassPermission = "lpbsa.bypass.$canonicalServer",
             denial = denial.merge(DenialOverrides()),
             profile = null,
             explicit = false,
@@ -118,3 +121,5 @@ data class ResolvedRestriction(
     val profile: String?,
     val explicit: Boolean,
 )
+
+fun canonicalServerName(server: String): String = server.trim().lowercase(Locale.ROOT)

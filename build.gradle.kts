@@ -25,6 +25,7 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
     testImplementation("com.velocitypowered:velocity-api:3.5.0-SNAPSHOT")
+    testImplementation("net.luckperms:api:5.5")
     testRuntimeOnly("org.slf4j:slf4j-simple:2.0.17")
 }
 
@@ -66,6 +67,8 @@ tasks {
     }
 
     shadowJar {
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         archiveBaseName.set("LPBSA")
         archiveClassifier.set("")

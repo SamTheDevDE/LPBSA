@@ -9,9 +9,11 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
 import de.samthedev.lpbsa.access.AccessController
 import de.samthedev.lpbsa.command.LPBSACommand
+import de.samthedev.lpbsa.config.ConfigException
 import de.samthedev.lpbsa.config.ConfigManager
 import de.samthedev.lpbsa.config.RuntimeStateStore
 import de.samthedev.lpbsa.listener.ServerPreConnectListener
+import de.samthedev.lpbsa.listener.StartupFailClosedListener
 import de.samthedev.lpbsa.luckperms.LuckPermsService
 import de.samthedev.lpbsa.message.MessageService
 import net.luckperms.api.LuckPermsProvider
@@ -32,19 +34,21 @@ class LPBSAPlugin @Inject constructor(
     @Subscribe
     fun onProxyInitialization(event: ProxyInitializeEvent) {
         if (proxy.pluginManager.getPlugin("luckperms").isEmpty) {
-            logger.error("[LPBSA] LuckPerms is required. LPBSA will not register access-control listeners.")
+            logger.error("[LPBSA] LuckPerms is required. Normal authorization cannot start.")
+            installFailClosedGuard()
             return
         }
         try {
-            val luckPerms = LuckPermsService(LuckPermsProvider.get())
+            // Resolve the provider per operation so a LuckPerms API replacement is not held stale.
+            val luckPerms = LuckPermsService(LuckPermsProvider::get)
             val configManager = ConfigManager(dataDirectory, ::registeredServers, logger)
             val loaded = configManager.initialize()
             loaded.warnings.forEach { logger.warn("[LPBSA] {}", it) }
             val states = RuntimeStateStore(loaded.state)
-            val messages = MessageService(states)
+            val messages = MessageService(states, logger)
             val controller = AccessController(proxy, states, luckPerms, messages, logger)
 
-            proxy.eventManager.register(this, ServerPreConnectListener(controller))
+            proxy.eventManager.register(this, ServerPreConnectListener(controller, logger))
             val command = LPBSACommand(proxy, states, configManager, luckPerms, messages)
             val metadata = proxy.commandManager.metaBuilder("lpbsa").plugin(this).build()
             proxy.commandManager.register(metadata, command)
@@ -53,9 +57,18 @@ class LPBSAPlugin @Inject constructor(
             logger.info("[LPBSA] LuckPerms detected ({}).", luckPerms.version())
             logger.info("[LPBSA] Loaded {} active server rules.", active)
             logger.info("[LPBSA] LPBSA {} enabled.", BuildInfo.VERSION)
+        } catch (failure: ConfigException) {
+            logger.error("[LPBSA] Startup configuration was rejected. All backend connections will fail closed: {}", failure.message)
+            installFailClosedGuard()
         } catch (failure: Exception) {
-            logger.error("[LPBSA] Startup failed. Access-control listeners were not registered.", failure)
+            logger.error("[LPBSA] Startup failed; all backend connections will fail closed.", failure)
+            installFailClosedGuard()
         }
+    }
+
+    private fun installFailClosedGuard() {
+        proxy.eventManager.register(this, StartupFailClosedListener())
+        logger.error("[LPBSA] Emergency fail-closed guard enabled; fix the startup error and restart Velocity.")
     }
 
     private fun registeredServers(): Set<String> = proxy.allServers.map { it.serverInfo.name }.toSet()

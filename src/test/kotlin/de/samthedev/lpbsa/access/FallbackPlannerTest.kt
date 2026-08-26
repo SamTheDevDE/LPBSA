@@ -1,6 +1,7 @@
 package de.samthedev.lpbsa.access
 
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class FallbackPlannerTest {
@@ -26,5 +27,13 @@ class FallbackPlannerTest {
         assertIs<FallbackPlan.Disconnect>(
             planner.plan("build", "lobby", setOf("build", "lobby"), AccessDecision.Denied(DenialReason.EmptyRequirements)),
         )
+    }
+
+    @Test
+    fun `registered fallback matching is case insensitive and deterministic`() {
+        val redirect = assertIs<FallbackPlan.Redirect>(
+            planner.plan("BUILD", "Lobby", setOf("Build", "LOBBY"), AccessDecision.OpenServer),
+        )
+        assertEquals("lobby", redirect.server)
     }
 }

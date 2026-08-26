@@ -13,16 +13,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: "25"
           cache: gradle
       - name: Build and test
         run: ./gradlew clean build
-      - uses: actions/upload-artifact@v4
+      - name: Select distributable
+        id: artifact
+        shell: bash
+        run: |
+          shopt -s nullglob
+          jars=(build/libs/LPBSA-*.jar)
+          test "${#jars[@]}" -eq 1
+          echo "path=${jars[0]}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: LPBSA
-          path: build/libs/LPBSA-*.jar
+          path: ${{ steps.artifact.outputs.path }}
           if-no-files-found: error

@@ -1,6 +1,7 @@
 package de.samthedev.lpbsa.access
 
 import de.samthedev.lpbsa.config.*
+import net.luckperms.api.util.Tristate
 import org.junit.jupiter.api.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -25,6 +26,13 @@ class AccessEvaluatorTest {
     }
 
     @Test
+    fun `permission removal is reflected on the next access attempt`() {
+        val restricted = config(rule = rule())
+        assertTrue(evaluator.evaluate(restricted, "build", subject("lpbsa.server.build")).allowed)
+        assertFalse(evaluator.evaluate(restricted, "build", subject()).allowed)
+    }
+
+    @Test
     fun `global bypass allows restricted server`() {
         assertIs<AccessDecision.AllowedByGlobalBypass>(evaluator.evaluate(config(rule = rule()), "build", subject("lpbsa.bypass")))
     }
@@ -33,6 +41,19 @@ class AccessEvaluatorTest {
     fun `server bypass allows only its server`() {
         val decision = evaluator.evaluate(config(rule = rule()), "build", subject("lpbsa.bypass.build"))
         assertIs<AccessDecision.AllowedByServerBypass>(decision)
+        assertFalse(evaluator.evaluate(config(rule = ServerRule("staff", true, Requirements(RequirementMode.ANY, listOf("staff.access"), emptyList()))), "staff", subject("lpbsa.bypass.build")).allowed)
+    }
+
+    @Test
+    fun `explicitly negated permission is denied`() {
+        val negated = subject(values = mapOf("lpbsa.server.build" to Tristate.FALSE))
+        assertFalse(evaluator.evaluate(config(rule = rule()), "build", negated).allowed)
+    }
+
+    @Test
+    fun `undefined permission is denied`() {
+        val undefined = subject(values = mapOf("lpbsa.server.build" to Tristate.UNDEFINED))
+        assertFalse(evaluator.evaluate(config(rule = rule()), "build", undefined).allowed)
     }
 
     @Test
@@ -72,16 +93,21 @@ class AccessEvaluatorTest {
     fun `authorization failures obey fail mode`() {
         val broken = object : PermissionSubject {
             override val name = "Steve"
-            override fun hasPermission(permission: String): Boolean = error("broken provider")
+            override fun permissionValue(permission: String): Tristate = error("broken provider")
             override fun isInGroup(group: String): Boolean = false
         }
         assertFalse(evaluator.evaluate(config(rule = rule()), "build", broken).allowed)
         assertTrue(evaluator.evaluate(config(rule = rule(), failMode = FailMode.OPEN), "build", broken).allowed)
     }
 
-    private fun subject(vararg permissions: String, groups: Set<String> = emptySet()) = object : PermissionSubject {
+    private fun subject(
+        vararg permissions: String,
+        groups: Set<String> = emptySet(),
+        values: Map<String, Tristate> = emptyMap(),
+    ) = object : PermissionSubject {
         override val name = "Steve"
-        override fun hasPermission(permission: String) = permission in permissions
+        override fun permissionValue(permission: String): Tristate =
+            values[permission] ?: if (permission in permissions) Tristate.TRUE else Tristate.UNDEFINED
         override fun isInGroup(group: String) = groups.any { it.equals(group, ignoreCase = true) }
     }
 
@@ -94,6 +120,6 @@ class AccessEvaluatorTest {
         failMode: FailMode = FailMode.CLOSED,
     ) = RuntimeConfig(
         1, false, defaultPolicy, "lpbsa.bypass", failMode, false, DenialSettings(), LoggingSettings(), emptyMap(),
-        rule?.let { mapOf("build" to it) } ?: emptyMap(), emptySet(),
+        rule?.let { mapOf(it.server to it) } ?: emptyMap(), emptySet(),
     )
 }

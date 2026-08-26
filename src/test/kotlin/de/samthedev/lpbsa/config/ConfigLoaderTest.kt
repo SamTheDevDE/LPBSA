@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ConfigLoaderTest {
@@ -80,6 +81,156 @@ class ConfigLoaderTest {
     }
 
     @Test
+    fun `malformed enabled flag rejects configuration instead of opening backend`() {
+        val failure = assertFailsWith<ConfigException> {
+            load(config(serverBody = """
+                enabled: definitely
+                requirements:
+                  mode: ANY
+                  permissions: [lpbsa.server.build]
+                  groups: []
+            """), setOf("lobby", "build"))
+        }
+
+        assertTrue(failure.message.orEmpty().contains("servers.build.enabled"))
+    }
+
+    @Test
+    fun `misspelled enabled flag cannot silently open backend`() {
+        val failure = assertFailsWith<ConfigException> {
+            load(config(serverBody = """
+                enabeld: true
+                requirements:
+                  mode: ANY
+                  permissions: [lpbsa.server.build]
+                  groups: []
+            """), setOf("lobby", "build"))
+        }
+
+        assertTrue(failure.message.orEmpty().contains("servers.build.enabled: missing required value"))
+    }
+
+    @Test
+    fun `missing default policy cannot silently select open policy`() {
+        val missing = config().replace("  default-policy: OPEN\n", "")
+        val failure = assertFailsWith<ConfigException> { load(missing, setOf("lobby", "build")) }
+
+        assertTrue(failure.message.orEmpty().contains("settings.default-policy: missing required value"))
+    }
+
+    @Test
+    fun `malformed requirements structure rejects entire configuration`() {
+        val failure = assertFailsWith<ConfigException> {
+            load(config(serverBody = """
+                enabled: true
+                requirements: allow-everyone
+            """), setOf("lobby", "build"))
+        }
+
+        assertTrue(failure.message.orEmpty().contains("servers.build.requirements"))
+    }
+
+    @Test
+    fun `malformed permissions collection rejects entire configuration`() {
+        val failure = assertFailsWith<ConfigException> {
+            load(config(serverBody = """
+                enabled: true
+                requirements:
+                  mode: ANY
+                  permissions: lpbsa.server.build
+                  groups: []
+            """), setOf("lobby", "build"))
+        }
+
+        assertTrue(failure.message.orEmpty().contains("servers.build.requirements.permissions"))
+    }
+
+    @Test
+    fun `out of range cooldown rejects entire configuration`() {
+        val invalid = config().replace("message-cooldown-ms: 1000", "message-cooldown-ms: 999999999")
+        val failure = assertFailsWith<ConfigException> { load(invalid, setOf("lobby", "build")) }
+
+        assertTrue(failure.message.orEmpty().contains("settings.denial.message-cooldown-ms"))
+    }
+
+    @Test
+    fun `server names are matched case insensitively`() {
+        val loaded = load(
+            config(serverName = "Build", serverBody = """
+                enabled: true
+                requirements:
+                  mode: ANY
+                  permissions: [network.builder]
+                  groups: []
+            """),
+            setOf("LOBBY", "BUILD"),
+        )
+
+        assertNotNull(loaded.state.config.restrictionFor("build"))
+        assertNotNull(loaded.state.config.restrictionFor("BUILD"))
+        assertEquals("build", loaded.state.config.servers.keys.single())
+    }
+
+    @Test
+    fun `case-insensitive duplicate backend rules are rejected`() {
+        val duplicate = config(serverName = "Build") + """
+
+              build:
+                enabled: true
+                permission: lpbsa.server.build
+        """.trimIndent().prependIndent("  ")
+
+        val failure = assertFailsWith<ConfigException> { load(duplicate, setOf("lobby", "build")) }
+        assertTrue(failure.message.orEmpty().contains("duplicates backend"))
+    }
+
+    @Test
+    fun `duplicate YAML backend keys are rejected by the loader`() {
+        val duplicate = config() + """
+
+              build:
+                enabled: true
+                permission: another.permission
+        """.trimIndent().prependIndent("  ")
+
+        assertFailsWith<ConfigException> { load(duplicate, setOf("lobby", "build")) }
+    }
+
+    @Test
+    fun `wrongly typed messages are rejected`() {
+        val malformedMessages = resource("messages.yml").replace(
+            "server-access-denied: \"<prefix><red>You do not have access to <white><server></white>.\"",
+            "server-access-denied: 123",
+        )
+        val configPath = directory.resolve("typed-message-config.yml")
+        val messagesPath = directory.resolve("typed-messages.yml")
+        configPath.writeText(config())
+        messagesPath.writeText(malformedMessages)
+
+        val failure = assertFailsWith<ConfigException> {
+            ConfigLoader().load(configPath, messagesPath, setOf("lobby", "build"))
+        }
+        assertTrue(failure.message.orEmpty().contains("messages.yml server-access-denied"))
+    }
+
+    @Test
+    fun `prefix placeholder in prefix is rendered literally without recursion`() {
+        val messagesText = resource("messages.yml").replace(
+            "prefix: \"<gray>[<gradient:#7c3aed:#c084fc>LPBSA</gradient>]</gray> \"",
+            "prefix: \"<prefix>safe \"",
+        )
+        val configPath = directory.resolve("prefix-config.yml")
+        val messagesPath = directory.resolve("prefix-messages.yml")
+        configPath.writeText(config())
+        messagesPath.writeText(messagesText)
+        val state = ConfigLoader().load(configPath, messagesPath, setOf("lobby", "build")).state
+
+        val rendered = MessageService(RuntimeStateStore(state)).render("server-access-denied", mapOf("server" to "build"))
+        val plain = PlainTextComponentSerializer.plainText().serialize(rendered)
+        assertTrue(plain.contains("safe"), plain)
+    }
+
+    @Test
     fun `server denial overrides inherit unspecified global values`() {
         val loaded = load(config(serverBody = """
             enabled: true
@@ -136,6 +287,7 @@ class ConfigLoaderTest {
         defaultPolicy: String = "OPEN",
         strict: Boolean = false,
         profiles: String = "{}",
+        serverName: String = "build",
         serverBody: String = """
             enabled: false
             requirements:
@@ -165,10 +317,11 @@ class ConfigLoaderTest {
                 allowed-connections: false
             profiles: __PROFILES__
             servers:
-              build:
+              __SERVER_NAME__:
             __SERVER__
         """.trimIndent()
             .replace("__PROFILES__", profilesValue)
+            .replace("__SERVER_NAME__", serverName)
             .replace("__SERVER__", serverValue)
     }
 }

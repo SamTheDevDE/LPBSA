@@ -5,10 +5,11 @@ import de.samthedev.lpbsa.config.RequirementMode
 import de.samthedev.lpbsa.config.Requirements
 import de.samthedev.lpbsa.config.ResolvedRestriction
 import de.samthedev.lpbsa.config.RuntimeConfig
+import net.luckperms.api.util.Tristate
 
 interface PermissionSubject {
     val name: String
-    fun hasPermission(permission: String): Boolean
+    fun permissionValue(permission: String): Tristate
     fun isInGroup(group: String): Boolean
 }
 
@@ -27,10 +28,10 @@ class AccessEvaluator {
         restriction: ResolvedRestriction,
         subject: PermissionSubject,
     ): AccessDecision {
-        if (subject.hasPermission(config.globalBypassPermission)) {
+        if (subject.permissionValue(config.globalBypassPermission) == Tristate.TRUE) {
             return AccessDecision.AllowedByGlobalBypass(config.globalBypassPermission)
         }
-        if (subject.hasPermission(restriction.bypassPermission)) {
+        if (subject.permissionValue(restriction.bypassPermission) == Tristate.TRUE) {
             return AccessDecision.AllowedByServerBypass(restriction.bypassPermission)
         }
         return evaluateRequirements(restriction.requirements, subject)
@@ -39,7 +40,7 @@ class AccessEvaluator {
     private fun evaluateRequirements(requirements: Requirements, subject: PermissionSubject): AccessDecision {
         val checks = buildList {
             requirements.permissions.forEach { permission ->
-                add(permission to subject.hasPermission(permission))
+                add(permission to (subject.permissionValue(permission) == Tristate.TRUE))
             }
             requirements.groups.forEach { group ->
                 add("group:$group" to subject.isInGroup(group))

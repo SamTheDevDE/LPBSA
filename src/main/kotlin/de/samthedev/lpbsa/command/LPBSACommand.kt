@@ -9,9 +9,11 @@ import de.samthedev.lpbsa.access.AccessDecision
 import de.samthedev.lpbsa.access.AccessEvaluator
 import de.samthedev.lpbsa.access.summary
 import de.samthedev.lpbsa.config.ConfigManager
+import de.samthedev.lpbsa.config.FailMode
 import de.samthedev.lpbsa.config.RuntimeStateStore
 import de.samthedev.lpbsa.luckperms.LuckPermsService
 import de.samthedev.lpbsa.message.MessageService
+import java.util.Locale
 
 class LPBSACommand(
     private val proxy: ProxyServer,
@@ -38,7 +40,7 @@ class LPBSACommand(
         if (!source.hasPermission("lpbsa.command")) return deny(source)
         val arguments = invocation.arguments()
         if (arguments.isEmpty()) return messages.send(source, "overview")
-        val name = arguments[0].lowercase()
+        val name = arguments[0].lowercase(Locale.ROOT)
         val info = commands[name] ?: return help(source)
         if (!source.hasPermission(info.permission)) return deny(source)
         when (name) {
@@ -57,10 +59,12 @@ class LPBSACommand(
         if (!source.hasPermission("lpbsa.command")) return emptyList()
         val args = invocation.arguments()
         if (args.size <= 1) {
-            val prefix = args.firstOrNull()?.lowercase().orEmpty()
+            val prefix = args.firstOrNull()?.lowercase(Locale.ROOT).orEmpty()
             return commands.filter { (name, info) -> name.startsWith(prefix) && source.hasPermission(info.permission) }.keys.toList()
         }
-        val command = args[0].lowercase()
+        val command = args[0].lowercase(Locale.ROOT)
+        val commandInfo = commands[command] ?: return emptyList()
+        if (!source.hasPermission(commandInfo.permission)) return emptyList()
         return when {
             command == "check" && args.size == 2 -> matching(proxy.allPlayers.map(Player::getUsername), args[1])
             command == "check" && args.size == 3 -> matching(serverNames(), args[2])
@@ -125,15 +129,22 @@ class LPBSACommand(
     }
 
     private fun evaluateAndSend(source: CommandSource, player: Player, server: String, ownTest: Boolean) {
-        if (proxy.getServer(server).isEmpty) return messages.send(source, "unknown-server", mapOf("server" to server))
-        val decision = evaluator.evaluate(states.current().config, server, luckPerms.subject(player))
+        val target = proxy.getServer(server).orElse(null)
+            ?: return messages.send(source, "unknown-server", mapOf("server" to server))
+        val targetName = target.serverInfo.name
+        val state = states.current()
+        val decision = try {
+            evaluator.evaluate(state.config, targetName, luckPerms.subject(player, targetName))
+        } catch (failure: Exception) {
+            AccessDecision.Failure(failure, state.config.failMode == FailMode.OPEN)
+        }
         val key = when {
             ownTest && decision.allowed -> "test-allowed"
             ownTest -> "test-denied"
             decision.allowed -> "check-allowed"
             else -> "check-denied"
         }
-        messages.send(source, key, mapOf("player" to player.username, "server" to server))
+        messages.send(source, key, mapOf("player" to player.username, "server" to targetName))
         messages.send(source, "check-detail", mapOf("reason" to decision.summary()))
     }
 

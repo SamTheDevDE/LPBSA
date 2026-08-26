@@ -2,7 +2,7 @@
 
 LuckPerms-Based Server Access for Velocity.
 
-LPBSA controls access to Velocity backend servers using the player's current LuckPerms permissions and inherited groups. LuckPerms remains the source of truth: LPBSA has no whitelist database, UUID grant list, or separate permission cache.
+LPBSA controls access to Velocity backend servers using the player's current LuckPerms permissions and inherited groups, evaluated with the destination backend's `server` context. LuckPerms remains the source of truth: LPBSA has no whitelist database, UUID grant list, or separate permission cache.
 
 > [!IMPORTANT]
 > LPBSA only protects connections routed through Velocity. Bind same-host backends to `127.0.0.1`, or firewall remote backend ports so only the proxy can reach them. Configure Velocity player-information forwarding correctly as well.
@@ -166,13 +166,17 @@ LPBSA evaluates build
 allowed / redirected / disconnected
 ```
 
-LPBSA does not configure DNS. An inaccessible or looping fallback causes a safe disconnect instead of another redirect.
+LPBSA does not configure DNS. A missing, self-referential, or unauthorized fallback causes a safe disconnect instead of another redirect. LPBSA performs no backend ping on the event path; if a registered fallback is offline, Velocity's normal connection-failure handling applies.
 
 ## How Access Checking Works
 
-LPBSA observes the effective destination late in `ServerPreConnectEvent`. It leaves an existing denial untouched, ignores unrestricted destinations, and queries LuckPerms-backed current data for restricted destinations. Allowed results are not rewritten. Denied transfers normally leave the player on the current backend; denied initial connections redirect or disconnect according to configuration.
+LPBSA observes the effective `ServerResult` destination synchronously at Velocity's lowest event priority, after normal routing plugins. It leaves an existing denial untouched, ignores unrestricted destinations, and queries current LuckPerms data using a target-specific `server=<destination>` context for restricted destinations. Allowed results are not rewritten. Denied transfers normally leave the player on the backend reported by `ServerPreConnectEvent.previousServer`; denied initial connections redirect or disconnect according to configuration.
+
+Plugins deliberately registered at the same final priority can still mutate an event after LPBSA, depending on registration order. Treat every plugin with backend-routing capability as part of the proxy's trusted computing base and audit it before installation.
 
 `fail-mode` only handles unexpected authorization failures on restricted servers. It is separate from `default-policy`.
+
+Startup configuration errors install an emergency listener that denies backend connections until Velocity is restarted with valid files. LuckPerms remains a required Velocity dependency; if it is absent, Velocity will refuse to load LPBSA.
 
 ## Examples
 
