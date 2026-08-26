@@ -1,0 +1,62 @@
+name: Bug report
+description: Report reproducible incorrect LPBSA behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not post database passwords, Velocity forwarding secrets, API keys, tokens, or other credentials.
+  - type: input
+    id: lpbsa-version
+    attributes:
+      label: LPBSA version
+    validations:
+      required: true
+  - type: input
+    id: velocity-version
+    attributes:
+      label: Velocity version
+    validations:
+      required: true
+  - type: input
+    id: luckperms-version
+    attributes:
+      label: LuckPerms version
+    validations:
+      required: true
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Relevant LPBSA configuration
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      render: text

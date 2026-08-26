@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Build and test
+        run: ./gradlew clean build
+      - name: Create checksum
+        shell: bash
+        run: |
+          jar="$(find build/libs -maxdepth 1 -name 'LPBSA-*.jar' -print -quit)"
+          test -n "$jar"
+          sha256sum "$jar" > "$jar.sha256"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" build/libs/LPBSA-*.jar build/libs/LPBSA-*.jar.sha256 --generate-notes --verify-tag

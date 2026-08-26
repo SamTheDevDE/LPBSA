@@ -1,0 +1,38 @@
+# LPBSA configuration. Server names match the IDs in Velocity's [servers] table.
+config-version: 1
+
+debug: false
+
+settings:
+  # OPEN leaves unconfigured backends public. RESTRICTED applies lpbsa.server.<server>.
+  default-policy: OPEN
+  global-bypass-permission: "lpbsa.bypass"
+  fail-mode: CLOSED
+  strict-server-validation: false
+
+  denial:
+    transfer-action: STAY
+    initial-action: REDIRECT
+    fallback-server: "lobby"
+    notification: CHAT
+    message-cooldown-ms: 1000
+
+  logging:
+    denied-connections: true
+    allowed-connections: false
+
+# Profiles are optional reusable requirement sets.
+profiles: {}
+
+servers:
+  build:
+    # Disabled examples do not change access on a newly installed proxy.
+    enabled: false
+    requirements:
+      mode: ANY
+      permissions:
+        - "lpbsa.server.build"
+      groups: []
+    bypass-permission: "lpbsa.bypass.build"
+    denial:
+      message: "server-access-denied"
